@@ -11,21 +11,11 @@ const DEFAULT_REGION = process.env.VOLCENGINE_REGION ?? "cn-north-1";
 const DEFAULT_SERVICE = process.env.VOLCENGINE_SERVICE ?? "cv";
 const DEFAULT_REQ_KEY = process.env.VOLCENGINE_REQ_KEY ?? "jimeng_t2i_v40";
 const USER_AGENT = "voco-nextjs/1.0";
-const MAX_FILE_SIZE_BYTES = resolvePositiveNumber(
-  process.env.UPLOAD_MAX_FILE_SIZE_BYTES,
-  10 * 1024 * 1024
-);
-const POLL_INTERVAL_MS = resolvePositiveNumber(
-  process.env.VOLCENGINE_POLL_INTERVAL_MS,
-  2000
-);
-const MAX_POLL_ATTEMPTS = resolvePositiveNumber(
-  process.env.VOLCENGINE_MAX_POLL_ATTEMPTS,
-  30
-);
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
-const SUBMIT_RETRY_DELAYS_MS = [2000, 4000, 6000];
-const RESULT_RETRY_DELAYS_MS = [1000, 2000];
+const POLL_INTERVAL_MS = 1000;
+const MAX_POLL_ATTEMPTS = 30;
+
 const NETWORK_ERROR_FRAGMENTS = [
   "fetch failed",
   "network",
@@ -67,15 +57,6 @@ type TaskResult = {
   status?: string;
   message?: string;
   data?: Record<string, unknown>;
-};
-
-type TaskResponse = {
-  Result?: TaskResult;
-  ResponseMetadata?: {
-    Error?: {
-      Message?: string;
-    };
-  };
 };
 
 interface ResolvedConfig {
@@ -157,9 +138,11 @@ async function processImage(
     }
 
     const result = await getTaskResult(taskId, config);
-    const status = result?.status?.toLowerCase();
+    console.log(result);
 
-    if (status === "success") {
+    const status = result.data?.status;
+
+    if (status === "done") {
       const imageUrl = extractImageUrl(result?.data, "image/jpeg");
       if (!imageUrl) {
         throw new Error("任务成功但未返回图片数据");
@@ -169,13 +152,10 @@ async function processImage(
 
     if (status === "failed") {
       const message = result?.message || "任务处理失败";
-      if (isRetryableMessage(message) && attempt < MAX_POLL_ATTEMPTS - 1) {
-        continue;
-      }
       throw new Error(message);
     }
 
-    if (!status || status === "processing" || status === "pending") {
+    if (!status || status === "in_queue" || status === "pending") {
       continue;
     }
   }
@@ -198,10 +178,7 @@ async function submitTask(
     prompt: config.prompt,
   };
 
-  const response = await postVolcengine<SubmitResponse>(url, payload, config, {
-    retryDelays: SUBMIT_RETRY_DELAYS_MS,
-    timeoutMs: 60000,
-  });
+  const response = await postVolcengine<SubmitResponse>(url, payload, config);
   console.log(response);
 
   const taskId = response.data?.task_id;
@@ -215,106 +192,56 @@ async function submitTask(
 async function getTaskResult(
   taskId: string,
   config: ResolvedConfig
-): Promise<TaskResult | undefined> {
+): Promise<TaskResult> {
   const url = buildUrl(config.baseUrl, "CVSync2AsyncGetResult", config.version);
   const payload = {
     req_key: config.reqKey,
     task_id: taskId,
   };
 
-  const response = await postVolcengine<TaskResponse>(url, payload, config, {
-    retryDelays: RESULT_RETRY_DELAYS_MS,
-    timeoutMs: 9999999999999,
-  });
+  const response = await postVolcengine<TaskResult>(url, payload, config);
+  console.log(response);
 
-  return response.Result;
+  return response;
 }
 
-async function postVolcengine<
-  T extends { ResponseMetadata?: { Error?: { Message?: string } } }
->(
+async function postVolcengine<T>(
   url: URL,
   payload: Record<string, unknown>,
-  config: ResolvedConfig,
-  options: { retryDelays: number[]; timeoutMs: number }
+  config: ResolvedConfig
 ): Promise<T> {
   const body = JSON.stringify(payload);
-  const attempts = options.retryDelays.length + 1;
+  const xDate = getDateTimeNow();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "User-Agent": USER_AGENT,
+    "X-Date": xDate,
+    Host: url.hostname,
+  };
+  const authorization = sign({
+    headers,
+    method: "POST",
+    query: Object.fromEntries(url.searchParams.entries()),
+    pathName: url.pathname,
+    accessKeyId: config.accessKeyId,
+    secretAccessKey: config.secretAccessKey,
+    serviceName: config.service,
+    region: config.region,
+    bodySha: createHash("sha256").update(body, "utf8").digest("hex"),
+    needSignHeaderKeys: ["host", "x-date"],
+  });
+  headers["Authorization"] = authorization;
 
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    try {
-      // 统一用 auth.ts 的 getDateTimeNow 生成 X-Date
-      // 并确保 Host 字段用 url.hostname
-      // 签名头部需包含 host 和 x-date
-      // @ts-ignore
-      const xDate = getDateTimeNow();
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        "User-Agent": USER_AGENT,
-        "X-Date": xDate,
-        Host: url.hostname,
-      };
-      const authorization = sign({
-        headers,
-        method: "POST",
-        query: Object.fromEntries(url.searchParams.entries()),
-        pathName: url.pathname,
-        accessKeyId: config.accessKeyId,
-        secretAccessKey: config.secretAccessKey,
-        serviceName: config.service,
-        region: config.region,
-        bodySha: createHash("sha256").update(body, "utf8").digest("hex"),
-        needSignHeaderKeys: ["host", "x-date"],
-      });
-      headers["Authorization"] = authorization;
+  const response = await fetch(url, {
+    method: "POST",
+    headers,
+    body,
+    cache: "no-store",
+  });
 
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
-      const response = await fetch(url, {
-        method: "POST",
-        headers,
-        body,
-        signal: controller.signal,
-        cache: "no-store",
-      });
-      clearTimeout(timeout);
-
-      const text = await response.text();
-      const data = text ? (JSON.parse(text) as T) : ({} as T);
-
-      const apiError = data.ResponseMetadata?.Error?.Message;
-
-      if (!response.ok || apiError) {
-        const message = apiError || `${response.status} ${response.statusText}`;
-
-        if (
-          attempt < attempts - 1 &&
-          (isRetryableStatus(response.status) || isRetryableMessage(message))
-        ) {
-          await delay(options.retryDelays[attempt]);
-          continue;
-        }
-
-        throw new Error(message);
-      }
-
-      return data;
-    } catch (error) {
-      const shouldRetry =
-        attempt < attempts - 1 &&
-        error instanceof Error &&
-        (error.name === "AbortError" || isNetworkError(error.message));
-
-      if (shouldRetry) {
-        await delay(options.retryDelays[attempt]);
-        continue;
-      }
-
-      throw error instanceof Error ? error : new Error("请求失败");
-    }
-  }
-
-  throw new Error("请求失败，请稍后重试");
+  const text = await response.text();
+  const data = text ? (JSON.parse(text) as T) : ({} as T);
+  return data;
 }
 
 function resolveConfig(): ResolvedConfig {
@@ -446,15 +373,4 @@ function isRetryableMessage(message?: string): boolean {
   return RETRYABLE_MESSAGE_FRAGMENTS.some((fragment) =>
     lowered.includes(fragment)
   );
-}
-
-function resolvePositiveNumber(
-  value: string | undefined,
-  fallback: number
-): number {
-  if (!value) {
-    return fallback;
-  }
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
