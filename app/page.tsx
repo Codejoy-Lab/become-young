@@ -1,99 +1,162 @@
-"use client"
+"use client";
 
-import type React from "react"
+import type React from "react";
 
-import { useState, useRef } from "react"
-import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
-import { Upload, Download, RotateCcw } from "lucide-react"
-import { useToast } from "@/hooks/use-toast"
+import { useState, useRef, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Upload, Download, RotateCcw } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 export default function PhotoProcessingPage() {
-  const [uploadedImage, setUploadedImage] = useState<string | null>(null)
-  const [processedImage, setProcessedImage] = useState<string | null>(null)
-  const [isProcessing, setIsProcessing] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const { toast } = useToast()
+  const [currentFile, setCurrentFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string>("");
+  const [processedImage, setProcessedImage] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    if (!currentFile) {
+      setPreviewUrl("");
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(currentFile);
+    setPreviewUrl(objectUrl);
+
+    return () => {
+      URL.revokeObjectURL(objectUrl);
+    };
+  }, [currentFile]);
+
+  const handleFileSelection = (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast({
+        title: "格式不支持",
+        description: "请上传图片格式的文件",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast({
+        title: "文件过大",
+        description: "图片大小不能超过10MB",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setCurrentFile(file);
+    setProcessedImage(null);
+  };
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
+    const file = event.target.files?.[0];
     if (file) {
-      if (file.type === "image/jpeg" || file.type === "image/png") {
-        const reader = new FileReader()
-        reader.onload = (e) => {
-          setUploadedImage(e.target?.result as string)
-          setProcessedImage(null) // Reset processed image when new image is uploaded
-        }
-        reader.readAsDataURL(file)
-      } else {
-        toast({
-          title: "格式不支持",
-          description: "请上传JPG或PNG格式的图片",
-          variant: "destructive",
-        })
-      }
+      handleFileSelection(file);
     }
-  }
+    event.target.value = "";
+  };
 
   const handleUploadClick = () => {
-    fileInputRef.current?.click()
-  }
+    fileInputRef.current?.click();
+  };
+
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        const base64 = result.split(",")[1];
+        if (!base64) {
+          reject(new Error("无法读取图片"));
+          return;
+        }
+        resolve(base64);
+      };
+      reader.onerror = () => reject(new Error("图片读取失败"));
+      reader.readAsDataURL(file);
+    });
+  };
 
   const processImage = async () => {
-    if (!uploadedImage) {
+    if (!currentFile) {
       toast({
         title: "请先上传图片",
         description: "需要先选择一张图片才能处理",
         variant: "destructive",
-      })
-      return
+      });
+      return;
     }
 
-    setIsProcessing(true)
+    setIsProcessing(true);
 
     try {
-      // Simulate API call to JiMeng API
-      // In real implementation, you would call the actual API here
-      await new Promise((resolve) => setTimeout(resolve, 3000))
+      const base64Image = await fileToBase64(currentFile);
 
-      // For demo purposes, we'll use the same image
-      // In real implementation, this would be the processed image from the API
-      setProcessedImage(uploadedImage)
+      const response = await fetch("/api/process-image", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ image: base64Image }),
+      });
+
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => ({}));
+        throw new Error(errorPayload?.error || `处理失败: ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      if (!result?.success || !result?.imageUrl) {
+        throw new Error(result?.error || "处理失败，请重试");
+      }
+
+      setProcessedImage(result.imageUrl);
 
       toast({
         title: "处理完成",
         description: "图片已成功处理",
-      })
+      });
     } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "图片处理过程中出现错误，请重试";
       toast({
         title: "处理失败",
-        description: "图片处理过程中出现错误，请重试",
+        description: message,
         variant: "destructive",
-      })
+      });
     } finally {
-      setIsProcessing(false)
+      setIsProcessing(false);
     }
-  }
+  };
 
   const downloadImage = () => {
     if (processedImage) {
-      const link = document.createElement("a")
-      link.href = processedImage
-      link.download = "processed-image.jpg"
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
+      const link = document.createElement("a");
+      link.href = processedImage;
+      link.download = "processed-image.jpg";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
-  }
+  };
 
   const resetApp = () => {
-    setUploadedImage(null)
-    setProcessedImage(null)
-    setIsProcessing(false)
+    setCurrentFile(null);
+    setPreviewUrl("");
+    setProcessedImage(null);
+    setIsProcessing(false);
     if (fileInputRef.current) {
-      fileInputRef.current.value = ""
+      fileInputRef.current.value = "";
     }
-  }
+  };
 
   return (
     <div className="min-h-screen relative overflow-hidden">
@@ -112,25 +175,18 @@ export default function PhotoProcessingPage() {
         {/* Header */}
         <div className="flex items-center justify-between mb-8 pt-4">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-card rounded-lg flex items-center justify-center">
-              <div className="w-4 h-4 bg-primary rounded-sm" />
-            </div>
-            <span className="text-card font-medium text-sm">PKUFI</span>
-            <span className="text-card/80 text-xs">北大方正人寿</span>
+            <img src="/logo.png" className="w-32" />
           </div>
         </div>
 
         {/* Main Title */}
-        <div className="text-center mb-12">
-          <h1 className="text-4xl md:text-5xl font-bold text-card mb-2 text-balance">时光共赴</h1>
-          <h2 className="text-4xl md:text-5xl font-bold text-card mb-4 text-balance">
-            为<span className="text-accent">爱</span>守护
-          </h2>
+        <div className="text-center mb-12 m-auto">
+          <img src="/tittle.png" className="w-72" />
         </div>
 
         {/* Upload Area */}
         <div className="flex-1 flex flex-col items-center justify-center max-w-md mx-auto w-full">
-          <Card className="w-full aspect-square bg-card/95 backdrop-blur-sm border-2 border-dashed border-border/50 rounded-3xl p-8 mb-8">
+          <Card className="w-full aspect-square bg-card/95 backdrop-blur-sm border-2 border-dashed border-border/50 rounded-3xl p-1 mb-8">
             <div
               className="w-full h-full flex flex-col items-center justify-center cursor-pointer hover:bg-muted/50 transition-colors rounded-2xl"
               onClick={handleUploadClick}
@@ -141,9 +197,9 @@ export default function PhotoProcessingPage() {
                   alt="Processed"
                   className="w-full h-full object-cover rounded-2xl"
                 />
-              ) : uploadedImage ? (
+              ) : previewUrl ? (
                 <img
-                  src={uploadedImage || "/placeholder.svg"}
+                  src={previewUrl || "/placeholder.svg"}
                   alt="Uploaded"
                   className="w-full h-full object-cover rounded-2xl"
                 />
@@ -152,8 +208,12 @@ export default function PhotoProcessingPage() {
                   <div className="w-16 h-16 bg-accent rounded-full flex items-center justify-center mb-4">
                     <Upload className="w-8 h-8 text-accent-foreground" />
                   </div>
-                  <p className="text-foreground font-medium text-lg mb-2">点击上传照片</p>
-                  <p className="text-muted-foreground text-sm">支持JPG、PNG格式</p>
+                  <p className="text-foreground font-medium text-lg mb-2">
+                    点击上传照片
+                  </p>
+                  <p className="text-muted-foreground text-sm">
+                    支持JPG、PNG格式
+                  </p>
                 </>
               )}
             </div>
@@ -181,7 +241,7 @@ export default function PhotoProcessingPage() {
           </Button>
 
           {/* Reset Button */}
-          {(uploadedImage || processedImage) && (
+          {(currentFile || processedImage) && (
             <button
               onClick={resetApp}
               className="flex items-center gap-2 text-card/80 hover:text-card transition-colors text-sm"
@@ -196,11 +256,11 @@ export default function PhotoProcessingPage() {
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/jpeg,image/png"
+          accept="image/*"
           onChange={handleImageUpload}
           className="hidden"
         />
       </div>
     </div>
-  )
+  );
 }
