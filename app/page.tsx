@@ -119,8 +119,8 @@ export default function PhotoProcessingPage() {
       setProcessedImage(result.imageUrl);
 
       toast({
-        title: "处理完成",
-        description: "图片已成功处理",
+        title: "容光焕发",
+        description: "今天的你依然活力",
       });
     } catch (error) {
       const message =
@@ -175,13 +175,13 @@ export default function PhotoProcessingPage() {
         {/* Header */}
         <div className="flex items-center justify-between mb-8 pt-4">
           <div className="flex items-center gap-2">
-            <img src="/logo.png" className="w-32" />
+            <img src="/logo.png" className="w-24" />
           </div>
         </div>
 
         {/* Main Title */}
-        <div className="text-center mb-12 m-auto">
-          <img src="/tittle.png" className="w-72" />
+        <div className="flex justify-center -mb-4 -mt-8">
+          <img src="/tittle.png" className="w-96 ml-8" />
         </div>
 
         {/* Upload Area */}
@@ -223,7 +223,7 @@ export default function PhotoProcessingPage() {
           <Button
             onClick={processedImage ? downloadImage : processImage}
             disabled={isProcessing}
-            className="w-full h-14 bg-gradient-to-r from-accent to-accent/80 hover:from-accent/90 hover:to-accent/70 text-accent-foreground font-medium text-lg rounded-full shadow-lg mb-4"
+            className="w-full h-14 bg-gradient-to-r from-[#19b0aa] to-[#19b0aa]/80 hover:from-[#19b0aa]/90 hover:to-[#19b0aa]/70 text-white font-medium text-lg rounded-full shadow-lg mb-4"
           >
             {isProcessing ? (
               <div className="flex items-center gap-2">

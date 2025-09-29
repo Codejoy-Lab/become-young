@@ -3,7 +3,7 @@ import { sign, getDateTimeNow } from "./auth";
 import { createHash } from "node:crypto";
 
 const DEFAULT_PROMPT =
-  "精修这张照片，让照片人物变年轻，保持原有特征，提升肌肤质感，减少皱纹";
+  "精修这张照片，让照片人物变年轻到18岁模样，皮肤变光滑细嫩，头发变黑，保持原有容貌特征，提升肌肤质感，减少皱纹";
 const BASE_URL =
   process.env.VOLCENGINE_BASE_URL ?? "https://visual.volcengineapi.com";
 const DEFAULT_VERSION = process.env.VOLCENGINE_VERSION ?? "2022-08-31";
@@ -14,7 +14,7 @@ const USER_AGENT = "voco-nextjs/1.0";
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
 const POLL_INTERVAL_MS = 1000;
-const MAX_POLL_ATTEMPTS = 30;
+const MAX_POLL_ATTEMPTS = 100;
 
 const NETWORK_ERROR_FRAGMENTS = [
   "fetch failed",
