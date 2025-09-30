@@ -32,22 +32,6 @@ export default function PhotoProcessingPage() {
     };
   }, [currentFile]);
 
-  // 音乐自动播放功能
-  useEffect(() => {
-    const playMusic = async () => {
-      if (audioRef.current) {
-        try {
-          await audioRef.current.play();
-          setIsPlaying(true);
-        } catch (error) {
-          console.log("自动播放被浏览器阻止，需要用户交互后播放");
-        }
-      }
-    };
-    
-    playMusic();
-  }, []);
-
   // 音乐播放控制函数
   const toggleMusic = async () => {
     if (audioRef.current) {
@@ -125,6 +109,16 @@ export default function PhotoProcessingPage() {
         variant: "destructive",
       });
       return;
+    }
+
+    // 开始处理时播放音乐
+    if (audioRef.current && !isPlaying) {
+      try {
+        await audioRef.current.play();
+        setIsPlaying(true);
+      } catch (error) {
+        console.log("音乐播放失败:", error);
+      }
     }
 
     setIsProcessing(true);
@@ -258,9 +252,7 @@ export default function PhotoProcessingPage() {
                   <p className="text-foreground font-medium text-lg mb-2">
                     点击上传照片
                   </p>
-                  <p className="text-muted-foreground text-sm">
-                    支持JPG、PNG格式
-                  </p>
+                 
                 </>
               )}
             </div>
@@ -270,7 +262,7 @@ export default function PhotoProcessingPage() {
           <Button
             onClick={processedImage ? downloadImage : processImage}
             disabled={isProcessing}
-            className="w-full h-14 bg-gradient-to-r from-[#19b0aa] to-[#19b0aa]/80 hover:from-[#19b0aa]/90 hover:to-[#19b0aa]/70 text-white font-medium text-lg rounded-full shadow-lg mb-4"
+            className="w-full h-14 bg-gradient-to-r from-[#008C85] to-[#008C85]/80 hover:from-[#008C85]/90 hover:to-[#008C85]/70 text-white font-medium text-lg rounded-full shadow-lg mb-4"
           >
             {isProcessing ? (
               <div className="flex items-center gap-2">
@@ -314,7 +306,7 @@ export default function PhotoProcessingPage() {
           loop
           preload="auto"
         >
-          <source src="/时光不老.MP3" type="audio/mpeg" />
+          <source src="/变魔法.MP3" type="audio/mpeg" />
           您的浏览器不支持音频播放。
         </audio>
       </div>
