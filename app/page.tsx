@@ -5,7 +5,7 @@ import type React from "react";
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Upload, Download, RotateCcw } from "lucide-react";
+import { Upload, Download, RotateCcw, Music } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function PhotoProcessingPage() {
@@ -13,7 +13,9 @@ export default function PhotoProcessingPage() {
   const [previewUrl, setPreviewUrl] = useState<string>("");
   const [processedImage, setProcessedImage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -29,6 +31,39 @@ export default function PhotoProcessingPage() {
       URL.revokeObjectURL(objectUrl);
     };
   }, [currentFile]);
+
+  // 音乐自动播放功能
+  useEffect(() => {
+    const playMusic = async () => {
+      if (audioRef.current) {
+        try {
+          await audioRef.current.play();
+          setIsPlaying(true);
+        } catch (error) {
+          console.log("自动播放被浏览器阻止，需要用户交互后播放");
+        }
+      }
+    };
+    
+    playMusic();
+  }, []);
+
+  // 音乐播放控制函数
+  const toggleMusic = async () => {
+    if (audioRef.current) {
+      if (isPlaying) {
+        audioRef.current.pause();
+        setIsPlaying(false);
+      } else {
+        try {
+          await audioRef.current.play();
+          setIsPlaying(true);
+        } catch (error) {
+          console.log("播放失败:", error);
+        }
+      }
+    }
+  };
 
   const handleFileSelection = (file: File) => {
     if (!file.type.startsWith("image/")) {
@@ -177,6 +212,18 @@ export default function PhotoProcessingPage() {
           <div className="flex items-center gap-2">
             <img src="/logo.png" className="w-24" />
           </div>
+          
+          {/* 音乐播放控制按钮 */}
+          <div className="fixed top-8 right-6 z-20">
+            <button
+              onClick={toggleMusic}
+              className="w-8 h-8 bg-black/40 rounded-full flex items-center justify-center hover:bg-black/30 transition-all duration-300 shadow-lg"
+            >
+              <Music 
+                className={`w-4 h-4 text-white/50 ${isPlaying ? 'animate-spin-slow' : ''}`} 
+              />
+            </button>
+          </div>
         </div>
 
         {/* Main Title */}
@@ -260,6 +307,16 @@ export default function PhotoProcessingPage() {
           onChange={handleImageUpload}
           className="hidden"
         />
+        
+        {/* 背景音乐 */}
+        <audio
+          ref={audioRef}
+          loop
+          preload="auto"
+        >
+          <source src="/时光不老.MP3" type="audio/mpeg" />
+          您的浏览器不支持音频播放。
+        </audio>
       </div>
     </div>
   );
